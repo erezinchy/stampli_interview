@@ -1,4 +1,3 @@
-
 # 1. PROVIDER & VPC CONFIGURATION
 provider "aws" {
   region = "us-east-1"
@@ -14,16 +13,16 @@ resource "aws_internet_gateway" "igw" {
 }
 
 resource "aws_subnet" "pub_a" {
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = "10.0.1.0/24"
-  availability_zone = "us-east-1a"
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.1.0/24"
+  availability_zone       = "us-east-1a"
   map_public_ip_on_launch = true
 }
 
 resource "aws_subnet" "pub_b" {
-  vpc_id            = aws_vpc.main.id
-  cidr_block        = "10.0.2.0/24"
-  availability_zone = "us-east-1b"
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.2.0/24"
+  availability_zone       = "us-east-1b"
   map_public_ip_on_launch = true
 }
 
@@ -54,7 +53,7 @@ resource "aws_security_group" "alb_sg" {
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"] # In a production environment, you'd restrict this to CF IP ranges
+    cidr_blocks = ["0.0.0.0/0"] 
   }
 
   egress {
@@ -91,10 +90,16 @@ resource "aws_ecr_repository" "app" {
 }
 
 resource "aws_ecs_cluster" "main" {
-  name = "app-cluster"
+  name = "app-cluster" # GitHub Action must use: ECS_CLUSTER: app-cluster
 }
 
-# IAM Role for ECS Task Execution (allows pulling from ECR and logging)
+# CloudWatch Log Group (Fixed: Created manually for ECS)
+resource "aws_cloudwatch_log_group" "ecs_logs" {
+  name              = "/ecs/tiny-web-app"
+  retention_in_days = 7
+}
+
+# IAM Role for ECS Task Execution
 resource "aws_iam_role" "ecs_exec_role" {
   name = "ecs_exec_role"
   assume_role_policy = jsonencode({
@@ -120,11 +125,19 @@ resource "aws_ecs_task_definition" "app" {
     name  = "web-app"
     image = "${aws_ecr_repository.app.repository_url}:latest"
     portMappings = [{ containerPort = 3000, hostPort = 3000 }]
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        "awslogs-group"         = "/ecs/tiny-web-app"
+        "awslogs-region"        = "us-east-1"
+        "awslogs-stream-prefix" = "ecs"
+      }
+    }
   }])
 }
 
 resource "aws_ecs_service" "app" {
-  name            = "app-service"
+  name            = "app-service" # GitHub Action must use: ECS_SERVICE: app-service
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.app.arn
   launch_type     = "FARGATE"
@@ -133,7 +146,7 @@ resource "aws_ecs_service" "app" {
   network_configuration {
     subnets          = [aws_subnet.pub_a.id, aws_subnet.pub_b.id]
     security_groups  = [aws_security_group.ecs_sg.id]
-    assign_public_ip = true # Required to pull image if not using PrivateLink/NAT
+    assign_public_ip = true 
   }
 
   load_balancer {
@@ -170,7 +183,7 @@ resource "aws_lb_listener" "http" {
   }
 }
 
-# 5. CLOUDFRONT DISTRIBUTION
+# 5. CLOUDFRONT DISTRIBUTION (Updated with Managed Policies)
 resource "aws_cloudfront_distribution" "cf" {
   origin {
     domain_name = aws_lb.alb.dns_name
@@ -191,16 +204,11 @@ resource "aws_cloudfront_distribution" "cf" {
     cached_methods   = ["GET", "HEAD"]
     target_origin_id = "ALBOrigin"
 
-    forwarded_values {
-      query_string = false
-      headers      = ["X-Forwarded-For", "Host"] # Critical for IP logic
-      cookies { forward = "none" }
-    }
+    # Forwarding X-Forwarded-For via Managed Origin Request Policy
+    origin_request_policy_id = "b689b0a8-53d0-40a8-b0e6-2457ca350846" # AllViewerExceptHostHeader
+    cache_policy_id          = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad" # CachingDisabled (for real-time IP tests)
 
     viewer_protocol_policy = "redirect-to-https"
-    min_ttl                = 0
-    default_ttl            = 0 # Set to 0 for real-time IP testing
-    max_ttl                = 0
   }
 
   restrictions {
@@ -217,6 +225,6 @@ output "cloudfront_url" {
   value = aws_cloudfront_distribution.cf.domain_name
 }
 
-output "ecr_repository_url" {
-  value = aws_ecr_repository.app.repository_url
+output "ecs_execution_role_arn" {
+  value = aws_iam_role.ecs_exec_role.arn
 }
