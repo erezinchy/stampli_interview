@@ -1,0 +1,9 @@
+{
+  "name": "tiny-ip-app",
+  "version": "1.0.0",
+  "description": "App to show client IP behind CloudFront",
+  "main": "app.js",
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

@@ -1,0 +1,39 @@
+# --- Node.js ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.env
+
+# --- Terraform ---
+# Local .terraform directory (where providers are downloaded)
+**/.terraform/*
+
+# .tfstate files (Contains your real infra data and potentially secrets)
+*.tfstate
+*.tfstate.*
+
+# Crash log files
+crash.log
+
+# Exclude all .tfvars files (These likely contain your secrets)
+*.tfvars
+*.tfvars.json
+
+# Ignore override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Ignore CLI configuration files
+.terraformrc
+terraform.rc
+
+# --- Docker ---
+# Ignore the built image layers locally
+.docker/
+
+# --- OS Specific ---
+.DS_Store
+Thumbs.db
